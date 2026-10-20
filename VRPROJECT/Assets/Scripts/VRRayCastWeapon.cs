@@ -7,17 +7,12 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors;
 public class VRRaycastWeapon : MonoBehaviour
 {
     [Header("Weapon Settings")]
-    [Tooltip("The point from which the raycast originates (e.g., the barrel tip).")]
     [SerializeField] private Transform muzzlePoint;
-
-    [Tooltip("Maximum distance of the weapon's raycast.")]
     [SerializeField] private float range = 100f;
 
-    [Tooltip("Layer mask to determine what the weapon can hit.")]
-    [SerializeField] private LayerMask hitLayers;
+    [SerializeField] private LayerMask hitLayers = ~0;
 
     [Header("Visuals & Effects")]
-    [Tooltip("Optional line renderer to show the laser/tracer.")]
     [SerializeField] private LineRenderer lineRenderer;
     [SerializeField] private float tracerDuration = 0.05f;
 
@@ -30,6 +25,7 @@ public class VRRaycastWeapon : MonoBehaviour
 
         if (muzzlePoint == null)
             muzzlePoint = transform;
+
     }
 
     private void OnEnable()
@@ -63,16 +59,21 @@ public class VRRaycastWeapon : MonoBehaviour
 
     private void Shoot()
     {
-        Ray ray = new Ray(muzzlePoint.position, muzzlePoint.forward);
-        bool hasHit = Physics.Raycast(ray, out RaycastHit hit, range, hitLayers);
+        if (TargetSpawner.Instance != null)
+        {
+            TargetSpawner.Instance.RegisterShotFired();
+        }
 
+        Ray ray = new Ray(muzzlePoint.position, muzzlePoint.forward);
+        Debug.DrawRay(ray.origin, ray.direction * range, Color.red, 1f);
+
+        bool hasHit = Physics.Raycast(ray, out RaycastHit hit, range, hitLayers, QueryTriggerInteraction.Collide);
         Vector3 hitPoint = hasHit ? hit.point : muzzlePoint.position + (muzzlePoint.forward * range);
 
         if (hasHit)
         {
-            Debug.Log($"Hit target: {hit.collider.name}", hit.collider.gameObject);
-
-            if (hit.collider.TryGetComponent<VRTarget>(out var target))
+            VRTarget target = hit.collider.GetComponentInParent<VRTarget>();
+            if (target != null)
             {
                 target.OnShot();
             }
