@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using TMPro;
 
 [RequireComponent(typeof(XRGrabInteractable))]
 public class VRRaycastWeapon : MonoBehaviour
@@ -19,9 +20,14 @@ public class VRRaycastWeapon : MonoBehaviour
     private XRGrabInteractable grabInteractable;
     private IXRSelectInteractor selectingInteractor;
 
+    public TMPro.TextMeshProUGUI scoreText;
+    public int points = 0;
+
     private void Awake()
     {
         grabInteractable = GetComponent<XRGrabInteractable>();
+
+        scoreText.text = "Points:  ";
 
         if (muzzlePoint == null)
             muzzlePoint = transform;
@@ -73,16 +79,26 @@ public class VRRaycastWeapon : MonoBehaviour
         if (hasHit)
         {
             VRTarget target = hit.collider.GetComponentInParent<VRTarget>();
+
             if (target != null)
             {
                 target.OnShot();
+                points++;
+                UpdateScore();
             }
+
         }
 
         if (lineRenderer != null)
         {
             StartCoroutine(ShowTracer(hitPoint));
         }
+    }
+
+    public void UpdateScore()
+    {
+        string v = "Points: " + points.ToString();
+        scoreText.text = v;
     }
 
     private System.Collections.IEnumerator ShowTracer(Vector3 endPoint)

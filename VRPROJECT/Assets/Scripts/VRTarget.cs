@@ -11,6 +11,7 @@ public class VRTarget : MonoBehaviour
     private Vector3 initialScale;
     private bool isHit = false;
 
+
     public void Initialize(TargetSpawner owner, bool startTarget, float targetLifetime)
     {
         spawner = owner;
@@ -18,6 +19,7 @@ public class VRTarget : MonoBehaviour
         lifetime = targetLifetime;
         spawnTime = Time.time;
         initialScale = transform.localScale;
+
     }
 
     private void Update()
@@ -48,6 +50,8 @@ public class VRTarget : MonoBehaviour
         {
             Instantiate(hitEffectPrefab, transform.position, transform.rotation);
         }
+
+        
 
         float reactionTime = Time.time - spawnTime;
 
