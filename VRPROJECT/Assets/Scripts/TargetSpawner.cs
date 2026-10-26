@@ -25,7 +25,6 @@ public class TargetSpawner : MonoBehaviour
     [SerializeField] private int targetsToSpawn = 3;
     [SerializeField] private LayerMask spawnBlockingLayer;
 
-    [Header("Aim Lab Pattern Settings")]
     [SerializeField] private float patternSpacing = 1.1f;
     [SerializeField] private Vector2 targetScaleRange = new Vector2(0.8f, 1.2f);
     [SerializeField] private float targetLifetime = 0f;
@@ -35,7 +34,6 @@ public class TargetSpawner : MonoBehaviour
     [SerializeField] private bool alternateADKeys = false;
     [SerializeField] private bool allowMouseClickToShoot = true;
 
-    [Header("Round & UI Settings (Optional)")]
     [SerializeField] private float roundDuration = 60f;
     [SerializeField] private TMP_Text statsText;
     [SerializeField] private TMP_Text timerText;
@@ -92,7 +90,6 @@ public class TargetSpawner : MonoBehaviour
         bool dPressed = false;
         bool mouseClicked = false;
 
-#if ENABLE_INPUT_SYSTEM
         if (Keyboard.current != null)
         {
             aPressed = Keyboard.current.aKey.wasPressedThisFrame;
@@ -102,11 +99,6 @@ public class TargetSpawner : MonoBehaviour
         {
             mouseClicked = Mouse.current.leftButton.wasPressedThisFrame;
         }
-#else
-        aPressed = Input.GetKeyDown(KeyCode.A);
-        dPressed = Input.GetKeyDown(KeyCode.D);
-        mouseClicked = Input.GetMouseButtonDown(0);
-#endif
 
         if (alternateADKeys)
         {
