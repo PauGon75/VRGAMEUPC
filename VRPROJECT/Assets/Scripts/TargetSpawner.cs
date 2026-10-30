@@ -19,32 +19,47 @@ public class TargetSpawner : MonoBehaviour
         RandomMultiBurst
     }
 
+    [Header("Spawner Settings")]
     [SerializeField] private GameObject targetPrefab;
     [SerializeField] private Vector3 area = new Vector3(5f, 3f, 0.5f);
     [SerializeField] private List<GameObject> targets = new List<GameObject>();
     [SerializeField] private int targetsToSpawn = 3;
     [SerializeField] private LayerMask spawnBlockingLayer;
 
+    [Header("Mode Modifiers")]
     [SerializeField] private float patternSpacing = 1.1f;
     [SerializeField] private Vector2 targetScaleRange = new Vector2(0.8f, 1.2f);
     [SerializeField] private float targetLifetime = 0f;
-    [SerializeField] private bool spawnInPatternWaves = true;
+    [SerializeField] private bool spawnInPatternWaves = false;
+    private ModeMenu.AimGameMode currentMode = ModeMenu.AimGameMode.Gridshot;
 
+    [Header("PC Debug Controls")]
     [SerializeField] private bool enableKeyboardTest = true;
     [SerializeField] private bool alternateADKeys = false;
     [SerializeField] private bool allowMouseClickToShoot = true;
 
+    [Header("UI & Round")]
     [SerializeField] private float roundDuration = 60f;
     [SerializeField] private TMP_Text statsText;
     [SerializeField] private TMP_Text timerText;
+    [SerializeField] private ModeMenu modeMenu;
+
+    [Header("Audio Juice (Combo Pitch)")]
+    [SerializeField] private AudioSource spawnerAudio;
+    [SerializeField] private AudioClip targetPopClip;
+    [SerializeField] private AudioClip streakBreakClip;
+    [SerializeField] private AudioClip roundEndClip;
 
     private float spawnRadius = 0.5f;
     private bool isRoundActive = false;
+    public bool IsRoundActive => isRoundActive;
+
     private float timeRemaining;
     private int score;
     private int shotsFired;
     private int targetsHit;
     private int currentStreak;
+    private int hitsInARow;
     private float totalReactionTime;
 
     private bool expectKeyA = true;
@@ -62,17 +77,12 @@ public class TargetSpawner : MonoBehaviour
         {
             spawnRadius = targetPrefab.transform.localScale.x / 2f;
         }
-
         SpawnStartTarget();
     }
 
     private void Update()
     {
-        if (enableKeyboardTest)
-        {
-            HandlePCDebugInput();
-        }
-
+        if (enableKeyboardTest) HandlePCDebugInput();
         if (!isRoundActive) return;
 
         timeRemaining -= Time.deltaTime;
@@ -84,74 +94,80 @@ public class TargetSpawner : MonoBehaviour
         }
     }
 
+    public void ConfigureMode(ModeMenu.ModePreset preset)
+    {
+        currentMode = preset.mode;
+        area = preset.areaSize;
+        targetScaleRange = preset.scaleRange;
+        targetsToSpawn = preset.simultaneousTargets;
+        targetLifetime = preset.targetLifetime;
+        spawnInPatternWaves = preset.usePatterns;
+
+        if (isRoundActive)
+        {
+            isRoundActive = false;
+        }
+        SpawnStartTarget();
+        UpdateUI($"Mode Selected: {preset.title}\nPress Start or Shoot Start Target!");
+    }
+
+    public void SetRoundDuration(float seconds)
+    {
+        roundDuration = seconds;
+    }
+
+    public void StopRoundEarly()
+    {
+        if (!isRoundActive) return;
+        isRoundActive = false;
+        ClearAllTargets();
+        SpawnStartTarget();
+        UpdateUI("Round Cancelled.\nSelect a Mode to Play.");
+        if (modeMenu != null) modeMenu.UpdateMenuUI();
+    }
+
     private void HandlePCDebugInput()
     {
-        bool aPressed = false;
-        bool dPressed = false;
-        bool mouseClicked = false;
-
-        if (Keyboard.current != null)
-        {
-            aPressed = Keyboard.current.aKey.wasPressedThisFrame;
-            dPressed = Keyboard.current.dKey.wasPressedThisFrame;
-        }
-        if (Mouse.current != null)
-        {
-            mouseClicked = Mouse.current.leftButton.wasPressedThisFrame;
-        }
+        bool aPressed = Keyboard.current != null && Keyboard.current.aKey.wasPressedThisFrame;
+        bool dPressed = Keyboard.current != null && Keyboard.current.dKey.wasPressedThisFrame;
+        bool mouseClicked = Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
 
         if (alternateADKeys)
         {
-            if (aPressed && expectKeyA)
-            {
-                expectKeyA = false;
-                PopNextTargetFromKeyboard("A");
-            }
-            else if (dPressed && !expectKeyA)
-            {
-                expectKeyA = true;
-                PopNextTargetFromKeyboard("D");
-            }
-            else if (aPressed || dPressed)
-            {
-                RegisterShotFired();
-            }
+            if (aPressed && expectKeyA) { expectKeyA = false; PopNextTargetFromKeyboard(); }
+            else if (dPressed && !expectKeyA) { expectKeyA = true; PopNextTargetFromKeyboard(); }
+            else if (aPressed || dPressed) RegisterShotFired();
         }
         else if (aPressed)
         {
-            PopNextTargetFromKeyboard("A");
+            PopNextTargetFromKeyboard();
         }
 
         if (allowMouseClickToShoot && mouseClicked && Camera.main != null)
         {
-            RegisterShotFired();
-#if ENABLE_INPUT_SYSTEM
             Vector2 mousePos = Mouse.current.position.ReadValue();
-#else
-            Vector2 mousePos = Input.mousePosition;
-#endif
             Ray ray = Camera.main.ScreenPointToRay(mousePos);
             if (Physics.Raycast(ray, out RaycastHit hit, 100f))
             {
+                RegisterShotFired();
                 VRTarget target = hit.collider.GetComponentInParent<VRTarget>();
-                if (target != null) target.OnShot();
+                if (target != null) target.OnShot(hit.point);
+            }
+            else
+            {
+                RegisterShotFired();
             }
         }
     }
 
-    private void PopNextTargetFromKeyboard(string keyName)
+    private void PopNextTargetFromKeyboard()
     {
         targets.RemoveAll(t => t == null);
-
         if (targets.Count > 0)
         {
             RegisterShotFired();
-            GameObject targetObj = targets[0];
-            VRTarget vrTarget = targetObj.GetComponentInChildren<VRTarget>();
-            if (vrTarget != null)
-            {
-                vrTarget.OnShot();
-            }
+            VRTarget vrTarget = targets[0].GetComponentInChildren<VRTarget>();
+            if (vrTarget != null) vrTarget.OnShot();
         }
     }
 
@@ -175,12 +191,24 @@ public class TargetSpawner : MonoBehaviour
         shotsFired = 0;
         targetsHit = 0;
         currentStreak = 0;
+        hitsInARow = 0;
         totalReactionTime = 0f;
         timeRemaining = roundDuration;
         isRoundActive = true;
         expectKeyA = true;
 
-        SpawnNextPattern();
+        if (spawnInPatternWaves)
+        {
+            SpawnNextPattern();
+        }
+        else
+        {
+            for (int i = 0; i < targetsToSpawn; i++)
+            {
+                SpawnTargetAtFreePosition();
+            }
+        }
+        if (modeMenu != null) modeMenu.UpdateMenuUI();
     }
 
     private void EndRound()
@@ -189,13 +217,114 @@ public class TargetSpawner : MonoBehaviour
         timeRemaining = 0f;
         ClearAllTargets();
 
+        if (spawnerAudio != null && roundEndClip != null)
+        {
+            spawnerAudio.pitch = 1f;
+            spawnerAudio.PlayOneShot(roundEndClip);
+        }
+
+        string key = $"HighScore_{currentMode}";
+        int prevBest = PlayerPrefs.GetInt(key, 0);
+        bool newRecord = score > prevBest;
+        if (newRecord)
+        {
+            PlayerPrefs.SetInt(key, score);
+            PlayerPrefs.Save();
+        }
+
         float accuracy = shotsFired > 0 ? ((float)targetsHit / shotsFired) * 100f : 0f;
         float avgReactionMs = targetsHit > 0 ? (totalReactionTime / targetsHit) * 1000f : 0f;
 
-        string summary = $"ROUND OVER! Score: {score} | Hits: {targetsHit} | Acc: {accuracy:F1}% | Avg: {avgReactionMs:F0}ms";
+        string recordTag = newRecord ? " [NEW RECORD!]" : "";
+        string summary = $"ROUND OVER!{recordTag}\nScore: {score} | Hits: {targetsHit} | Acc: {accuracy:F1}% | Avg: {avgReactionMs:F0}ms";
         UpdateUI(summary);
 
-        Invoke(nameof(SpawnStartTarget), 2f);
+        if (modeMenu != null) modeMenu.UpdateMenuUI();
+        Invoke(nameof(SpawnStartTarget), 2.5f);
+    }
+
+    public void RegisterShotFired()
+    {
+        if (!isRoundActive) return;
+        shotsFired++;
+
+        if (shotsFired - targetsHit > hitsInARow)
+        {
+            currentStreak = 0;
+        }
+        UpdateUI();
+    }
+
+    public int OnTargetShot(VRTarget target, float reactionTime, bool isStartTarget, bool isBullseye)
+    {
+        targets.Remove(target.gameObject);
+        targets.RemoveAll(t => t == null);
+
+        if (isStartTarget)
+        {
+            StartRound();
+            return 0;
+        }
+
+        if (!isRoundActive) return 0;
+
+        targetsHit++;
+        currentStreak++;
+        hitsInARow = targetsHit;
+        totalReactionTime += reactionTime;
+
+        if (spawnerAudio != null && targetPopClip != null)
+        {
+            spawnerAudio.pitch = Mathf.Clamp(0.9f + (currentStreak * 0.04f), 0.9f, 1.8f);
+            spawnerAudio.PlayOneShot(targetPopClip);
+        }
+
+        int speedBonus = Mathf.Clamp(Mathf.RoundToInt((1f - reactionTime) * 50f), 0, 50);
+        int bullseyeBonus = isBullseye ? 50 : 0;
+        int pointsEarned = 100 + speedBonus + bullseyeBonus + (currentStreak * 5);
+        score += pointsEarned;
+
+        if (spawnInPatternWaves)
+        {
+            if (targets.Count == 0) SpawnNextPattern();
+        }
+        else
+        {
+            while (targets.Count < targetsToSpawn)
+            {
+                SpawnTargetAtFreePosition();
+            }
+        }
+
+        UpdateUI();
+        return pointsEarned;
+    }
+
+    public void OnTargetExpired(VRTarget target)
+    {
+        targets.Remove(target.gameObject);
+        targets.RemoveAll(t => t == null);
+        if (!isRoundActive) return;
+
+        currentStreak = 0;
+        if (spawnerAudio != null && streakBreakClip != null)
+        {
+            spawnerAudio.pitch = 1f;
+            spawnerAudio.PlayOneShot(streakBreakClip);
+        }
+
+        if (spawnInPatternWaves)
+        {
+            if (targets.Count == 0) SpawnNextPattern();
+        }
+        else
+        {
+            while (targets.Count < targetsToSpawn)
+            {
+                SpawnTargetAtFreePosition();
+            }
+        }
+        UpdateUI();
     }
 
     private void SpawnNextPattern()
@@ -211,54 +340,37 @@ public class TargetSpawner : MonoBehaviour
             case SpawnPattern.SingleFlick:
                 patternOffsets.Add(Vector3.zero);
                 break;
-
             case SpawnPattern.HorizontalPair:
                 patternOffsets.Add(new Vector3(-patternSpacing * 0.5f, 0f, 0f));
                 patternOffsets.Add(new Vector3(patternSpacing * 0.5f, 0f, 0f));
                 break;
-
             case SpawnPattern.VerticalPair:
                 patternOffsets.Add(new Vector3(0f, -patternSpacing * 0.5f, 0f));
                 patternOffsets.Add(new Vector3(0f, patternSpacing * 0.5f, 0f));
                 break;
-
             case SpawnPattern.TriangleCluster:
                 patternOffsets.Add(new Vector3(0f, patternSpacing * 0.6f, 0f));
                 patternOffsets.Add(new Vector3(-patternSpacing * 0.6f, -patternSpacing * 0.4f, 0f));
                 patternOffsets.Add(new Vector3(patternSpacing * 0.6f, -patternSpacing * 0.4f, 0f));
                 break;
-
             case SpawnPattern.DiagonalSweep:
                 float dir = Random.value > 0.5f ? 1f : -1f;
                 for (int i = -1; i <= 1; i++)
-                {
                     patternOffsets.Add(new Vector3(i * patternSpacing * 0.8f, i * dir * patternSpacing * 0.8f, 0f));
-                }
                 break;
-
             case SpawnPattern.RandomMultiBurst:
                 int burstCount = Random.Range(2, Mathf.Max(3, targetsToSpawn + 1));
-                for (int i = 0; i < burstCount; i++)
-                {
-                    SpawnTargetAtFreePosition();
-                }
+                for (int i = 0; i < burstCount; i++) SpawnTargetAtFreePosition();
                 return;
         }
 
-        int spawned = 0;
         foreach (Vector3 offset in patternOffsets)
         {
             Vector3 candidatePos = ClampToArea(anchorPos + offset);
             if (!Physics.CheckSphere(candidatePos, spawnRadius, spawnBlockingLayer))
-            {
                 InstantiateTarget(candidatePos);
-                spawned++;
-            }
             else
-            {
                 SpawnTargetAtFreePosition();
-                spawned++;
-            }
         }
     }
 
@@ -266,7 +378,6 @@ public class TargetSpawner : MonoBehaviour
     {
         SpawnPattern[] allPatterns = (SpawnPattern[])System.Enum.GetValues(typeof(SpawnPattern));
         SpawnPattern chosen = lastPattern;
-
         for (int i = 0; i < 10; i++)
         {
             chosen = allPatterns[Random.Range(0, allPatterns.Length)];
@@ -277,16 +388,17 @@ public class TargetSpawner : MonoBehaviour
 
     private void SpawnTargetAtFreePosition()
     {
-        const int maxAttempts = 40;
-        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        float checkRadius = Mathf.Max(0.15f, spawnRadius * targetScaleRange.y);
+        for (int attempt = 0; attempt < 40; attempt++)
         {
             Vector3 spawnPos = GetRandomPointInArea(1f);
-            if (!Physics.CheckSphere(spawnPos, spawnRadius, spawnBlockingLayer))
+            if (!Physics.CheckSphere(spawnPos, checkRadius, spawnBlockingLayer))
             {
                 InstantiateTarget(spawnPos);
                 return;
             }
         }
+        InstantiateTarget(GetRandomPointInArea(0.8f));
     }
 
     private void InstantiateTarget(Vector3 position)
@@ -299,19 +411,17 @@ public class TargetSpawner : MonoBehaviour
         {
             vrTarget.Initialize(this, false, targetLifetime);
         }
-
         targets.Add(newTarget);
     }
 
     private Vector3 GetRandomPointInArea(float marginMultiplier)
     {
         Vector3 halfArea = (area * 0.5f) * marginMultiplier;
-        Vector3 offset = new Vector3(
+        return transform.position + new Vector3(
             Random.Range(-halfArea.x, halfArea.x),
             Random.Range(-halfArea.y, halfArea.y),
             Random.Range(-halfArea.z, halfArea.z)
         );
-        return transform.position + offset;
     }
 
     private Vector3 ClampToArea(Vector3 worldPos)
@@ -324,65 +434,6 @@ public class TargetSpawner : MonoBehaviour
             Mathf.Clamp(worldPos.y, min.y, max.y),
             Mathf.Clamp(worldPos.z, min.z, max.z)
         );
-    }
-
-    public void RegisterShotFired()
-    {
-        if (!isRoundActive) return;
-        shotsFired++;
-        UpdateUI();
-    }
-
-    public void OnTargetShot(VRTarget target, float reactionTime, bool isStartTarget)
-    {
-        targets.Remove(target.gameObject);
-        targets.RemoveAll(t => t == null);
-
-        if (isStartTarget)
-        {
-            StartRound();
-            return;
-        }
-
-        if (!isRoundActive) return;
-
-        targetsHit++;
-        currentStreak++;
-        totalReactionTime += reactionTime;
-
-        int speedBonus = Mathf.Clamp(Mathf.RoundToInt((1f - reactionTime) * 50f), 0, 50);
-        score += 100 + speedBonus + (currentStreak * 5);
-
-        if (spawnInPatternWaves)
-        {
-            if (targets.Count == 0)
-            {
-                SpawnNextPattern();
-            }
-        }
-        else
-        {
-            if (targets.Count == 0)
-            {
-                SpawnNextPattern();
-            }
-        }
-
-        UpdateUI();
-    }
-
-    public void OnTargetExpired(VRTarget target)
-    {
-        targets.Remove(target.gameObject);
-        targets.RemoveAll(t => t == null);
-        if (!isRoundActive) return;
-
-        currentStreak = 0;
-        if (targets.Count == 0)
-        {
-            SpawnNextPattern();
-        }
-        UpdateUI();
     }
 
     private void ClearAllTargets()
@@ -399,7 +450,7 @@ public class TargetSpawner : MonoBehaviour
     {
         if (timerText != null)
         {
-            timerText.text = isRoundActive ? $"Time: {timeRemaining:F1}s" : "READY";
+            timerText.text = isRoundActive ? $"Time: {timeRemaining:F1}s" : "READY TO START";
         }
 
         if (statsText != null)
@@ -412,7 +463,7 @@ public class TargetSpawner : MonoBehaviour
             {
                 float accuracy = shotsFired > 0 ? ((float)targetsHit / shotsFired) * 100f : 100f;
                 float avgReactionMs = targetsHit > 0 ? (totalReactionTime / targetsHit) * 1000f : 0f;
-                statsText.text = $"Score: {score}\nPattern: {lastPattern}\nAcc: {accuracy:F1}% | Hits: {targetsHit}\nAvg Speed: {avgReactionMs:F0}ms";
+                statsText.text = $"Score: {score} | Streak: {currentStreak}x\nMode: {currentMode}\nAcc: {accuracy:F1}% | Hits: {targetsHit}\nAvg Speed: {avgReactionMs:F0}ms";
             }
         }
     }
