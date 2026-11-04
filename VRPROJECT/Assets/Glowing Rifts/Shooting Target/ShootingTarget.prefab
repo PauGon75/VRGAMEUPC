@@ -5070,9 +5070,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VRTarget
   hitEffectPrefab: {fileID: 3556922508078008260}
   scorePopupPrefab: {fileID: 0}
-  targetRenderer: {fileID: 0}
-  freshColor: {r: 0.1, g: 0.9, b: 0.4, a: 1}
-  expiringColor: {r: 1, g: 0.2, b: 0.2, a: 1}
+  targetRenderer: {fileID: 6710311051603118850}
+  freshColor: {r: 0.10196079, g: 0.9019608, b: 0.85193795, a: 1}
+  expiringColor: {r: 0.9433962, g: 0.1389991, b: 0.048949808, a: 1}
   spawnPopDuration: 0.12
 --- !u!65 &1651938097185283484
 BoxCollider:

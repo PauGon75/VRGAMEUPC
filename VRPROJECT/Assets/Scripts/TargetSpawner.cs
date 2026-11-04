@@ -38,11 +38,16 @@ public class TargetSpawner : MonoBehaviour
     [SerializeField] private bool alternateADKeys = false;
     [SerializeField] private bool allowMouseClickToShoot = true;
 
-    [Header("UI & Round")]
+    [Header("Dashboard UI")]
     [SerializeField] private float roundDuration = 60f;
     [SerializeField] private TMP_Text statsText;
     [SerializeField] private TMP_Text timerText;
     [SerializeField] private ModeMenu modeMenu;
+
+    [Header("Wall Scoreboard HUD (3 Boxes)")]
+    [SerializeField] private TMP_Text wallPointsText;
+    [SerializeField] private TMP_Text wallTimeText;
+    [SerializeField] private TMP_Text wallAccuracyText;
 
     [Header("Audio Juice (Combo Pitch)")]
     [SerializeField] private AudioSource spawnerAudio;
@@ -77,7 +82,9 @@ public class TargetSpawner : MonoBehaviour
         {
             spawnRadius = targetPrefab.transform.localScale.x / 2f;
         }
+        timeRemaining = roundDuration;
         SpawnStartTarget();
+        UpdateUI();
     }
 
     private void Update()
@@ -107,19 +114,26 @@ public class TargetSpawner : MonoBehaviour
         {
             isRoundActive = false;
         }
+        timeRemaining = roundDuration;
         SpawnStartTarget();
-        UpdateUI($"Mode Selected: {preset.title}\nPress Start or Shoot Start Target!");
+        UpdateUI($"Mode Selected: {preset.title}\nPress Start or Shoot Target!");
     }
 
     public void SetRoundDuration(float seconds)
     {
         roundDuration = seconds;
+        if (!isRoundActive)
+        {
+            timeRemaining = roundDuration;
+            UpdateUI();
+        }
     }
 
     public void StopRoundEarly()
     {
         if (!isRoundActive) return;
         isRoundActive = false;
+        timeRemaining = roundDuration;
         ClearAllTargets();
         SpawnStartTarget();
         UpdateUI("Round Cancelled.\nSelect a Mode to Play.");
@@ -176,6 +190,8 @@ public class TargetSpawner : MonoBehaviour
         ClearAllTargets();
         expectKeyA = true;
 
+        if (targetPrefab == null) return;
+
         GameObject startObj = Instantiate(targetPrefab, transform.position, Quaternion.identity);
         if (startObj.TryGetComponent<VRTarget>(out var vrTarget))
         {
@@ -208,6 +224,7 @@ public class TargetSpawner : MonoBehaviour
                 SpawnTargetAtFreePosition();
             }
         }
+        UpdateUI();
         if (modeMenu != null) modeMenu.UpdateMenuUI();
     }
 
@@ -403,6 +420,7 @@ public class TargetSpawner : MonoBehaviour
 
     private void InstantiateTarget(Vector3 position)
     {
+        if (targetPrefab == null) return;
         GameObject newTarget = Instantiate(targetPrefab, position, Quaternion.identity);
         float scaleMult = Random.Range(targetScaleRange.x, targetScaleRange.y);
         newTarget.transform.localScale = targetPrefab.transform.localScale * scaleMult;
@@ -448,9 +466,21 @@ public class TargetSpawner : MonoBehaviour
 
     private void UpdateUI(string customMessage = null)
     {
+        float accuracy = shotsFired > 0 ? ((float)targetsHit / shotsFired) * 100f : 100f;
+        float displaySeconds = isRoundActive ? Mathf.Max(0f, timeRemaining) : roundDuration;
+        int mins = Mathf.FloorToInt(displaySeconds / 60f);
+        int secs = Mathf.CeilToInt(displaySeconds % 60f);
+        if (secs == 60) { mins++; secs = 0; }
+
+        // 1. Actualizar los 3 paneles gigantes de la pared (POINTS | TIME | ACCURACY)
+        if (wallPointsText != null) wallPointsText.text = score.ToString();
+        if (wallTimeText != null) wallTimeText.text = $"{mins:00}:{secs:00}";
+        if (wallAccuracyText != null) wallAccuracyText.text = $"{Mathf.RoundToInt(accuracy)}%";
+
+        // 2. Actualizar el menú lateral (Dashboard)
         if (timerText != null)
         {
-            timerText.text = isRoundActive ? $"Time: {timeRemaining:F1}s" : "READY TO START";
+            timerText.text = isRoundActive ? $"TIME: {timeRemaining:F1}s" : "READY";
         }
 
         if (statsText != null)
@@ -461,7 +491,6 @@ public class TargetSpawner : MonoBehaviour
             }
             else
             {
-                float accuracy = shotsFired > 0 ? ((float)targetsHit / shotsFired) * 100f : 100f;
                 float avgReactionMs = targetsHit > 0 ? (totalReactionTime / targetsHit) * 1000f : 0f;
                 statsText.text = $"Score: {score} | Streak: {currentStreak}x\nMode: {currentMode}\nAcc: {accuracy:F1}% | Hits: {targetsHit}\nAvg Speed: {avgReactionMs:F0}ms";
             }

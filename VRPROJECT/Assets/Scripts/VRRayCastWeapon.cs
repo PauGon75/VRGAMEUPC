@@ -10,6 +10,8 @@ public class VRRaycastWeapon : MonoBehaviour
     [Header("Weapon Settings")]
     [SerializeField] private Transform muzzlePoint;
     [SerializeField] private float range = 100f;
+    [Tooltip("Bullet thickness / magnetism radius in meters. Increase to make hits more forgiving!")]
+    [SerializeField] private float shotRadius = 0.14f;
     [SerializeField] private LayerMask hitLayers = ~0;
 
     [Header("Visuals & Tracer")]
@@ -94,19 +96,38 @@ public class VRRaycastWeapon : MonoBehaviour
         }
 
         Ray ray = new Ray(muzzlePoint.position, muzzlePoint.forward);
-        bool hasHit = Physics.Raycast(ray, out RaycastHit hit, range, hitLayers, QueryTriggerInteraction.Collide);
-        Vector3 hitPoint = hasHit ? hit.point : muzzlePoint.position + (muzzlePoint.forward * range);
+        VRTarget hitTarget = null;
+        Vector3 hitPoint = muzzlePoint.position + (muzzlePoint.forward * range);
 
-        if (hasHit)
+        if (Physics.Raycast(ray, out RaycastHit exactHit, range, hitLayers, QueryTriggerInteraction.Collide))
         {
-            VRTarget target = hit.collider.GetComponentInParent<VRTarget>();
-            if (target != null)
+            hitPoint = exactHit.point;
+            hitTarget = exactHit.collider.GetComponentInParent<VRTarget>();
+        }
+
+        if (hitTarget == null && shotRadius > 0f)
+        {
+            RaycastHit[] sphereHits = Physics.SphereCastAll(ray, shotRadius, range, hitLayers, QueryTriggerInteraction.Collide);
+            float closestDist = float.MaxValue;
+
+            foreach (var h in sphereHits)
             {
-                target.OnShot(hit.point);
-                points++;
-                UpdateScore();
-                SendHaptics(0.75f, 0.09f);
+                VRTarget candidate = h.collider.GetComponentInParent<VRTarget>();
+                if (candidate != null && h.distance < closestDist)
+                {
+                    closestDist = h.distance;
+                    hitTarget = candidate;
+                    hitPoint = h.collider.ClosestPoint(ray.GetPoint(h.distance));
+                }
             }
+        }
+
+        if (hitTarget != null)
+        {
+            hitTarget.OnShot(hitPoint);
+            points++;
+            UpdateScore();
+            SendHaptics(0.75f, 0.09f);
         }
 
         if (lineRenderer != null)
@@ -147,5 +168,12 @@ public class VRRaycastWeapon : MonoBehaviour
             yield return null;
         }
         lineRenderer.enabled = false;
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        Transform origin = muzzlePoint != null ? muzzlePoint : transform;
+        Gizmos.color = new Color(0f, 1f, 1f, 0.4f);
+        Gizmos.DrawWireSphere(origin.position + origin.forward * 2f, shotRadius);
     }
 }
